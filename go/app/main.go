@@ -7,13 +7,16 @@ import (
 	"path"
 	"strings"
 
-	"encoding/json"
-	"io/ioutil"
+	"database/sql"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+
+	_ "github.com/mattn/go-sqlite3"
 )
+
+var DbConnection *sql.DB
 
 const (
 	ImgDir = "image"
@@ -28,41 +31,20 @@ func root(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-type Item struct {
-	Items []Contents `json:"items"`
-}
-
-type Contents struct {
-	Name string `json:"name"`
-	Category string `json:"category"`
-}
-
 func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
 	category := c.FormValue("category")
 	c.Logger().Infof("Receive item: %s %s", name, category)
 
-	bytes, err := ioutil.ReadFile("app/items.json")
+	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
+	defer DbConnection.Close()
+
+	cmd := "INSERT INTO items (name,category) VALUES (?,?)"
+	_, err := DbConnection.Exec(cmd,name,category)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	var item Item
-	if err := json.Unmarshal(bytes, &item); err != nil {
-        log.Fatal(err)
-    }
-
-	var contents Contents
-	contents.Name = name
-	contents.Category = category
-	item.Items = append(item.Items, contents)
-
-	n_json, err := json.Marshal(item)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ioutil.WriteFile("app/items.json", n_json, os.ModePerm)
 
 	message := fmt.Sprintf("item received: %s", name)
 	res := Response{Message: message}
@@ -71,12 +53,27 @@ func addItem(c echo.Context) error {
 }
 
 func showItem(c echo.Context) error {
-	bytes, err := ioutil.ReadFile("app/items.json")
+	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
+	defer DbConnection.Close()
+
+	cmd := "SELECT name,category FROM items"
+	rows, err := DbConnection.Query(cmd)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer rows.Close()
+	
+	var message string
+	for rows.Next(){
+		var name string
+		var category string
+		err := rows.Scan(&name,&category)
+		if err != nil{
+			log.Fatal(err)
+		}
+		message += "name: " + name + " " + "category: " + category + "\n"
+	}
 
-	message := string(bytes) + "\n"
 	return c.String(http.StatusOK, message)
 }
 
