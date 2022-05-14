@@ -7,6 +7,9 @@ import (
 	"path"
 	"strings"
 
+	"encoding/json"
+	"io/ioutil"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
@@ -25,15 +28,56 @@ func root(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+type Item struct {
+	Items []Contents `json:"items"`
+}
+
+type Contents struct {
+	Name string `json:"name"`
+	Category string `json:"category"`
+}
+
 func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
-	c.Logger().Infof("Receive item: %s", name)
+	category := c.FormValue("category")
+	c.Logger().Infof("Receive item: %s %s", name, category)
+
+	bytes, err := ioutil.ReadFile("app/items.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var item Item
+	if err := json.Unmarshal(bytes, &item); err != nil {
+        log.Fatal(err)
+    }
+
+	var contents Contents
+	contents.Name = name
+	contents.Category = category
+	item.Items = append(item.Items, contents)
+
+	n_json, err := json.Marshal(item)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ioutil.WriteFile("app/items.json", n_json, os.ModePerm)
 
 	message := fmt.Sprintf("item received: %s", name)
 	res := Response{Message: message}
 
 	return c.JSON(http.StatusOK, res)
+}
+
+func showItem(c echo.Context) error {
+	bytes, err := ioutil.ReadFile("app/items.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	message := string(bytes) + "\n"
+	return c.String(http.StatusOK, message)
 }
 
 func getImg(c echo.Context) error {
@@ -71,6 +115,7 @@ func main() {
 	// Routes
 	e.GET("/", root)
 	e.POST("/items", addItem)
+	e.GET("/items", showItem)
 	e.GET("/image/:itemImg", getImg)
 
 	// Start server
