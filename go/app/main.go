@@ -6,7 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
-
+	"encoding/json"
 	"database/sql"
 
 	"github.com/labstack/echo/v4"
@@ -29,6 +29,15 @@ type Response struct {
 func root(c echo.Context) error {
 	res := Response{Message: "Hello, world!"}
 	return c.JSON(http.StatusOK, res)
+}
+
+type Item struct {
+	Items []Contents `json:"items"`
+}
+
+type Contents struct {
+	Name string `json:"name"`
+	Category string `json:"category"`
 }
 
 func addItem(c echo.Context) error {
@@ -63,18 +72,50 @@ func showItem(c echo.Context) error {
 	}
 	defer rows.Close()
 	
-	var message string
+	var item Item
 	for rows.Next(){
-		var name string
-		var category string
-		err := rows.Scan(&name,&category)
+		var contents Contents
+		err := rows.Scan(&contents.Name,&contents.Category)
 		if err != nil{
 			log.Fatal(err)
 		}
-		message += "name: " + name + " " + "category: " + category + "\n"
+		item.Items = append(item.Items,contents)
+	}
+	n_json, err := json.Marshal(item)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return c.String(http.StatusOK, string(n_json)+"\n")
+}
+
+func searchItem(c echo.Context) error {
+	name := c.FormValue("keyword")
+
+	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
+	defer DbConnection.Close()
+
+	cmd := "SELECT name,category FROM items where name = ?"
+	rows, err := DbConnection.Query(cmd,name)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	var item Item
+	for rows.Next(){
+		var contents Contents
+		err := rows.Scan(&contents.Name,&contents.Category)
+		if err != nil{
+			log.Fatal(err)
+		}
+		item.Items = append(item.Items,contents)
 	}
 
-	return c.String(http.StatusOK, message)
+	n_json, err := json.Marshal(item)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return c.String(http.StatusOK, string(n_json)+"\n")
 }
 
 func getImg(c echo.Context) error {
@@ -113,6 +154,7 @@ func main() {
 	e.GET("/", root)
 	e.POST("/items", addItem)
 	e.GET("/items", showItem)
+	e.GET("/search", searchItem)
 	e.GET("/image/:itemImg", getImg)
 
 	// Start server
