@@ -6,8 +6,11 @@ import (
 	"os"
 	"path"
 	"strings"
+
 	"encoding/json"
 	"database/sql"
+	"encoding/hex"
+	"crypto/sha256"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -38,19 +41,24 @@ type Item struct {
 type Contents struct {
 	Name string `json:"name"`
 	Category string `json:"category"`
+	Image string `json:"image"`
 }
 
 func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
 	category := c.FormValue("category")
-	c.Logger().Infof("Receive item: %s %s", name, category)
+	i_path := c.FormValue("image")
+	hashed:=sha256.Sum256([]byte(i_path))
+	image := hex.EncodeToString(hashed[:])+".jpg"
+
+	c.Logger().Infof("Receive item: %s %s %s", name, category, image)
 
 	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
 	defer DbConnection.Close()
 
-	cmd := "INSERT INTO items (name,category) VALUES (?,?)"
-	_, err := DbConnection.Exec(cmd,name,category)
+	cmd := "INSERT INTO items (name,category,image) VALUES (?,?,?)"
+	_, err := DbConnection.Exec(cmd,name,category,image)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -65,7 +73,7 @@ func showItem(c echo.Context) error {
 	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
 	defer DbConnection.Close()
 
-	cmd := "SELECT name,category FROM items"
+	cmd := "SELECT name,category,image FROM items"
 	rows, err := DbConnection.Query(cmd)
 	if err != nil {
 		log.Fatal(err)
@@ -75,7 +83,7 @@ func showItem(c echo.Context) error {
 	var item Item
 	for rows.Next(){
 		var contents Contents
-		err := rows.Scan(&contents.Name,&contents.Category)
+		err := rows.Scan(&contents.Name,&contents.Category,&contents.Image)
 		if err != nil{
 			log.Fatal(err)
 		}
@@ -94,7 +102,7 @@ func searchItem(c echo.Context) error {
 	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
 	defer DbConnection.Close()
 
-	cmd := "SELECT name,category FROM items where name = ?"
+	cmd := "SELECT name,category,image FROM items where name = ?"
 	rows, err := DbConnection.Query(cmd,name)
 	if err != nil {
 		log.Fatal(err)
@@ -104,7 +112,7 @@ func searchItem(c echo.Context) error {
 	var item Item
 	for rows.Next(){
 		var contents Contents
-		err := rows.Scan(&contents.Name,&contents.Category)
+		err := rows.Scan(&contents.Name,&contents.Category,&contents.Image)
 		if err != nil{
 			log.Fatal(err)
 		}
@@ -112,6 +120,29 @@ func searchItem(c echo.Context) error {
 	}
 
 	n_json, err := json.Marshal(item)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return c.String(http.StatusOK, string(n_json)+"\n")
+}
+
+func getItem(c echo.Context) error {
+	// Create image path
+	id := c.Param("id")
+	DbConnection,_:=sql.Open("sqlite3","../db/mercari.sqlite3")
+	defer DbConnection.Close()
+
+	cmd := "SELECT name,category,image FROM items where id = ?"
+	row := DbConnection.QueryRow(cmd,id)
+
+	var contents Contents
+	err := row.Scan(&contents.Name,&contents.Category,&contents.Image)
+	if err != nil{
+		if err != sql.ErrNoRows{
+			log.Fatal(err)
+		}
+	}
+	n_json, err := json.Marshal(contents)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -154,6 +185,7 @@ func main() {
 	e.GET("/", root)
 	e.POST("/items", addItem)
 	e.GET("/items", showItem)
+	e.GET("/items/:id", getItem)
 	e.GET("/search", searchItem)
 	e.GET("/image/:itemImg", getImg)
 
