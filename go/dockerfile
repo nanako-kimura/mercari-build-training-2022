@@ -1,5 +1,8 @@
 FROM alpine
 FROM golang:1.18.1
 
-# STEP4-4では以下は変更しない
-CMD ["go", "version"]
+# RUN go mod tidy
+COPY  . /src
+WORKDIR /src/go
+RUN go mod tidy
+CMD ["go","run","app/main.go"]
